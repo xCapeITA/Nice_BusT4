@@ -1,38 +1,37 @@
 Russian translation available
 [Russian](https://github.com/pruwait/Nice_BusT4)
 
-# ESPHOME component to control Nice drives via Bus T4 protocol
-# Nice Bus T4 protocol
+Componente ESPHOME per il controllo dei camcelli/serrande automatiche Nice tramite protocollo Bus T4
+Protocollo Nice Bus T4
+Consente a ESP8266 di comunicare con gli apri-cancello/garage Nice utilizzando la porta Bus T4. 
+La scheda di controllo Nice deve essere dotata di connettore BusT4.
 
-Allowes ESP8266 to communicate with Nice gate/garage openers using the Bus T4 port.
-Nice controll board must be equipped with BusT4 connector.
+# Attuali funzionalità
+Invio di comandi: "Apri", "Stop", "Chiudi", "Apertura parziale", "Passo-passo (SBS)" e altri tramite pulsanti.
+Invio di comandi HEX arbitrari tramite il servizio "raw_command". I separatori di byte possono essere punti o spazi. Esempio: 55 0c 00 03 00 81 01 05 86 01 82 01 64 e6 0c o 55.0D.00.FF.00.66.08.06.97.00.04.99.00.00.9D.0D
+Formazione e invio di richieste GET/SET arbitrarie tramite il servizio "send_inf_command". Consente di configurare il dispositivo o ottenere il suo stato.
+Visualizzazione dei pacchetti da tutti i dispositivi nella rete BusT4.
 
-# Current capabilities
-* Sending commands: "Open", "Stop", "Close", "Partial opening", "Step by step (SBS)" and others via buttons.
-* Sending arbitrary HEX commands via the "raw_command" service. Byte separators can be periods or spaces. Example: 55 0c 00 03 00 81 01 05 86 01 82 01 64 e6 0c or 55.0D.00.FF.00.66.08.06.97.00.04.99.00.00.9D.0D
-* Formation and sending of arbitrary GET/SET requests through the "send_inf_command" service. Allows you to configure the device or get its status.
-* Display packets from all devices in the BusT4 network.
-* Tested with Wingo5000 with MCA5 block, Robus RB500HS, SO2000, Road 400, DPRO924.
-
-# BusT4:
-This is a modified UART 19200 8n1 with a uart break duration of 519us-590us before each burst.
-You can connect several devices; for this, CAN-BUS transceivers are added to the physical layer.
-Physical transmission often occurs through CAN transceivers, but there are no CAN frames.
-
+# Bus T4: Dettagli Tecnici
+Si tratta di una UART modificata 19200 8n1 con una durata di uart break di 519ms-590ms prima di ogni input.
+È possibile connettere diversi dispositivi; per questo, i ricetrasmettitori CAN-BUS sono aggiunti al livello fisico.
+La trasmissione fisica avviene spesso tramite ricetrasmettitori CAN, ma non ci sono frame CAN.
 ![alt text](img/connector.jpg "BusT4 port with pinout")
 
-BusT4 RX/TX are running on 5V. ESP8266 RX/TX are using 3.3V - level shifter must be used!
-BusT4 VCC pin provides power with voltage in range of 24V to 28V.
-Take extra care to follow the correct pinout - incorrect wiring to the BusT4 can immediately kill you Nice control board. Manually check voltage on the VCC port before connecting to the unit!
+BusT4 RX/TX operano a 5V.
+ESP8266 RX/TX utilizzano 3.3V - è necessario utilizzare un convertitore di livello! 
+Il pin VCC del BusT4 fornisce alimentazione con tensione compresa tra 24V e 28V.
+Prestare estrema attenzione a seguire la corretta piedinatura - un cablaggio errato al BusT4 può immediatamente danneggiare la scheda di controllo Nice.
+Verificare manualmente la tensione sulla porta VCC prima di connettersi all'unità!
 
 ![alt text](img/diagram.jpg "Example of connection with Wemos D1 mini, logic level shifter and DC-DC buck step down conventer")
 
-The component supports sending an arbitrary command to the drive via the ESPHome service:
+# Esempi di Comandi
+Il componente supporta l'invio di un comando arbitrario all'azionamento tramite il servizio ESPHome:
 ```
 SBS:   55 0c 00 03 00 81 01 05 86 01 82 01 64 e6 0c
 Open:  55 0c 00 03 05 81 01 05 83 01 82 03 64 e4 0c
 Close: 55 0c 00 03 05 81 01 05 83 01 82 04 64 e3 0c
 Stop:  55 0c 00 03 00 81 01 05 86 01 82 02 64 e5 0c
 ```
-
-Original version available at https://github.com/pruwait/Nice_BusT4, most of credit goes to `@pruwait`.
+La versione originale è disponibile su https://github.com/pruwait/Nice_BusT4, la maggior parte del merito va a @pruwait.
