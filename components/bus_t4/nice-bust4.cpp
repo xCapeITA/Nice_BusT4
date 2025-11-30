@@ -55,7 +55,7 @@ void NiceBusT4::control(const CoverCall &call) {
 
       } else { // Произвольное положение
         position_hook_value = (_pos_opn - _pos_cls) * newpos + _pos_cls;
-        ESP_LOGI(TAG, "Требуемое положение привода: %d", position_hook_value);
+        ESP_LOGI(TAG, "Posizione richiesta: %d", position_hook_value);
         if (position_hook_value > _pos_usl) {
           position_hook_type = STOP_UP;
           if (current_operation != COVER_OPERATION_OPENING) send_cmd(OPEN);
@@ -188,7 +188,7 @@ bool NiceBusT4::validate_message_() {                    // проверка п�
   // Byte 9: crc1 = XOR (Byte 3 : Byte 8) XOR шести предыдущих байт
   if (at == 9)
     if (data[9] != crc1) {
-      ESP_LOGW(TAG, "Received invalid message checksum 1 %02X!=%02X", data[9], crc1);
+      ESP_LOGW(TAG, "Checksum 1: ricevuto messaggio invalido %02X!=%02X", data[9], crc1);
       return false;
     }
   // Byte 10:
@@ -205,14 +205,14 @@ bool NiceBusT4::validate_message_() {                    // проверка п�
   }
 
   if (data[length - 1] != crc2 ) {
-    ESP_LOGW(TAG, "Received invalid message checksum 2 %02X!=%02X", data[length - 1], crc2);
+    ESP_LOGW(TAG, "Checksum 2: ricevuto messaggio invalido %02X!=%02X", data[length - 1], crc2);
     return false;
   }
 
   // Byte Last: packet_size
   //  if (at  ==  length) {
   if (data[length] != packet_size ) {
-    ESP_LOGW(TAG, "Received invalid message size %02X!=%02X", data[length], packet_size);
+    ESP_LOGW(TAG, "Dimesione errata del messaggio %02X!=%02X", data[length], packet_size);
     return false;
   }
 
@@ -223,7 +223,7 @@ bool NiceBusT4::validate_message_() {                    // проверка п�
 
   // для вывода пакета в лог
   std::string pretty_cmd = format_hex_pretty(rx_message_);
-  ESP_LOGI(TAG,  "Получен пакет: %S ", pretty_cmd.c_str() );
+  ESP_LOGI(TAG,  "Pacchetto ricevuto: %S ", pretty_cmd.c_str() );
 
   // здесь что-то делаем с сообщением
   parse_status_packet(rx_message_);
@@ -239,20 +239,20 @@ bool NiceBusT4::validate_message_() {                    // проверка п�
 // разбираем полученные пакеты
 void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
   if ((data[1] == 0x0d) && (data[13] == 0xFD)) { // ошибка
-    ESP_LOGE(TAG,  "Команда недоступна для этого устройства" );
+    ESP_LOGE(TAG,  "Comando non disponibile per questo dispositivo." );
   }
 
   if (((data[11] == GET - 0x80) || (data[11] == GET - 0x81)) && (data[13] == NOERR)) { // if evt
   //  ESP_LOGD(TAG, "Получен пакет EVT с данными. Последняя ячейка %d ", data[12]);
     std::vector<uint8_t> vec_data(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
     std::string str(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
-    ESP_LOGI(TAG,  "Строка с данными: %S ", str.c_str() );
+    ESP_LOGI(TAG,  "Stringa di dati: %S ", str.c_str() );
     std::string pretty_data = format_hex_pretty(vec_data);
-    ESP_LOGI(TAG,  "Данные HEX %S ", pretty_data.c_str() );
+    ESP_LOGI(TAG,  "Dati HEX %S ", pretty_data.c_str() );
     // получили пакет с данными EVT, начинаем разбирать
 
     if ((data[6] == INF) && (data[9] == FOR_CU)  && (data[11] == GET - 0x80) && (data[13] == NOERR)) { // интересуют завершенные ответы на запросы GET, пришедшие без ошибок от привода
-      ESP_LOGI(TAG,  "Получен ответ на запрос %X ", data[10] );
+      ESP_LOGI(TAG,  "Ricevuta risposta %X ", data[10] );
       switch (data[10]) { // cmd_submnu
         case TYPE_M:
           //           ESP_LOGI(TAG,  "Тип привода %X",  data[14]);
@@ -282,14 +282,14 @@ void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
         case INF_IO: // ответ на запрос положения концевика откатных ворот
           switch (data[16]) { //16
             case 0x00:
-              ESP_LOGI(TAG, "  Концевик не сработал ");
+              ESP_LOGI(TAG, "  Finecorsa in errore ");
               break; // 0x00
             case 0x01:
-              ESP_LOGI(TAG, "  Концевик на закрытие ");
+              ESP_LOGI(TAG, "  FInecorsa in chiusura ");
               this->position = COVER_CLOSED;
               break; //  0x01
             case 0x02:
-              ESP_LOGI(TAG, "  Концевик на открытие ");
+              ESP_LOGI(TAG, "  Finecorsa in apertura ");
               this->position = COVER_OPEN;
               break; // 0x02
 
@@ -309,18 +309,18 @@ void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
           else {  
             this->_max_opn = (data[14] << 8) + data[15];
           }
-          ESP_LOGI(TAG, "Максимальное положение энкодера: %d", this->_max_opn);
+          ESP_LOGI(TAG, "Posizione massima encoder: %d", this->_max_opn);
           break;
 
         case POS_MIN:
           this->_pos_cls = (data[14] << 8) + data[15];
-          ESP_LOGI(TAG, "Положение закрытых ворот: %d", this->_pos_cls);
+          ESP_LOGI(TAG, "Posizione cancello chiuso: %d", this->_pos_cls);
           break;
 
         case POS_MAX:
           if (((data[14] << 8) + data[15])>0x00) { // если в ответе от привода есть данные о положении открытия
           this->_pos_opn = (data[14] << 8) + data[15];}
-          ESP_LOGI(TAG, "Положение открытых ворот: %d", this->_pos_opn);
+          ESP_LOGI(TAG, "Posizione cancello aperto: %d", this->_pos_opn);
           break;
 
         case CUR_POS:
@@ -333,36 +333,36 @@ void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
         case INF_STATUS:
           switch (data[14]) {
             case OPENED:
-              ESP_LOGI(TAG, "  Ворота открыты");
+              ESP_LOGI(TAG, "  Cancello aperto");
               this->current_operation = COVER_OPERATION_IDLE;
               this->position = COVER_OPEN;
               break;
             case CLOSED:
-              ESP_LOGI(TAG, "  Ворота закрыты");
+              ESP_LOGI(TAG, "  Cancello chiuso");
               this->current_operation = COVER_OPERATION_IDLE;
               this->position = COVER_CLOSED;
               break;
             case 0x01:
-              ESP_LOGI(TAG, "  Ворота остановлены");
+              ESP_LOGI(TAG, "  Cancello fermo");
               this->current_operation = COVER_OPERATION_IDLE;
               request_position();
               break;
             case 0x00:
-              ESP_LOGI(TAG, "  Статус ворот неизвестен");
+              ESP_LOGI(TAG, "  Stato del cancello sconosciuto");
               this->current_operation = COVER_OPERATION_IDLE;
               request_position();
               break;
              case 0x0b:
-              ESP_LOGI(TAG, "  Поиск положений сделан");
+              ESP_LOGI(TAG, "  Ricerca..");
               this->current_operation = COVER_OPERATION_IDLE;
               request_position();
               break;
               case STA_OPENING:
-              ESP_LOGI(TAG, "  Идёт открывание");
+              ESP_LOGI(TAG, "  Apertura in corso..");
               this->current_operation = COVER_OPERATION_OPENING;
               break;
               case STA_CLOSING:
-              ESP_LOGI(TAG, "  Идёт закрывание");
+              ESP_LOGI(TAG, "  Chiusura in corso");
               this->current_operation = COVER_OPERATION_CLOSING;
               break;
           }  // switch
@@ -372,7 +372,7 @@ void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
           //      default: // cmd_mnu
         case AUTOCLS:
           this->autocls_flag = data[14];
-	  ESP_LOGCONFIG(TAG, "  Автозакрытие - L1: %S ", autocls_flag ? "Да" : "Нет");	
+	  ESP_LOGCONFIG(TAG, "  Chiusura automatica - L1: %S ", autocls_flag ? "Да" : "Нет");	
           break;
           
         case PH_CLS_ON:
@@ -387,7 +387,7 @@ void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
     } // if завершенные ответы на запросы GET, пришедшие без ошибок от привода
 
      if ((data[6] == INF) &&  (data[11] == GET - 0x81) && (data[13] == NOERR)) { // интересуют незавершенные ответы на запросы GET, пришедшие без ошибок от всех
-	ESP_LOGI(TAG,  "Получен незавершенный ответ на запрос %X, продолжение со смещением %X", data[10], data[12] );
+	ESP_LOGI(TAG,  "Ricevuta risposta incompleta %X, offset %X", data[10], data[12] );
 	     // повторяем команду с новым смещением
 	tx_buffer_.push(gen_inf_cmd(data[4], data[5], data[9], data[10], GET, data[12]));
      
@@ -483,11 +483,11 @@ void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
     }  // if  FOR_ALL ответы на запросы GET, пришедшие без ошибок
 
     if ((data[9] == 0x0A) &&  (data[10] == 0x25) &&  (data[11] == 0x01) &&  (data[12] == 0x0A) &&  (data[13] == NOERR)) { //  пакеты от приемника с информацией о списке пультов, пришедшие без ошибок
-      ESP_LOGCONFIG(TAG, "Номер пульта: %X%X%X%X, команда: %X, кнопка: %X, режим: %X, счётчик нажатий: %d", vec_data[5], vec_data[4], vec_data[3], vec_data[2], vec_data[8] / 0x10, vec_data[5] / 0x10, vec_data[7] + 0x01, vec_data[6]);
+      ESP_LOGCONFIG(TAG, "Numero telecomando: %X%X%X%X, comando: %X, pulsante: %X, modalità: %X, contatore pressioni: %d", vec_data[5], vec_data[4], vec_data[3], vec_data[2], vec_data[8] / 0x10, vec_data[5] / 0x10, vec_data[7] + 0x01, vec_data[6]);
     }  // if
 
     if ((data[9] == 0x0A) &&  (data[10] == 0x26) &&  (data[11] == 0x41) &&  (data[12] == 0x08) &&  (data[13] == NOERR)) { //  пакеты от приемника с информацией о считанной кнопке пульта
-      ESP_LOGCONFIG(TAG, "Кнопка %X, номер пульта: %X%X%X%X", vec_data[0] / 0x10, vec_data[0] % 0x10, vec_data[1], vec_data[2], vec_data[3]);
+      ESP_LOGCONFIG(TAG, "Pulsante %X, telecomando numero: %X%X%X%X", vec_data[0] / 0x10, vec_data[0] % 0x10, vec_data[1], vec_data[2], vec_data[3]);
     }  // if
 
   } //  if evt
@@ -504,59 +504,59 @@ void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
     ESP_LOGI(TAG,  "Данные HEX %S ", pretty_data.c_str() );
     switch (data[9]) { // cmd_mnu
       case FOR_CU:
-        ESP_LOGI(TAG, "Пакет контроллера привода");
+        ESP_LOGI(TAG, "Pacchetto controller");
         switch (data[10] + 0x80) { // sub_inf_cmd
           case RUN:
-            ESP_LOGI(TAG, "Подменю RUN");
+            ESP_LOGI(TAG, "Sottomenu RUN");
 			if (data[11] >= 0x80) {
 			  switch (data[11] - 0x80) {  // sub_run_cmd1
 			    case SBS:
-			      ESP_LOGI(TAG, "Команда: Пошагово");
+			      ESP_LOGI(TAG, "Voce: Passo passo");
 			      break;
 			    case STOP:
-			      ESP_LOGI(TAG, "Команда: STOP");
+			      ESP_LOGI(TAG, "Voce: STOP");
 			      break;
 			    case OPEN:
-			      ESP_LOGI(TAG, "Команда: OPEN");
+			      ESP_LOGI(TAG, "Voce: OPEN");
 			      this->current_operation = COVER_OPERATION_OPENING;
 			      break;
 			    case CLOSE:
-			      ESP_LOGI(TAG, "Команда: CLOSE");
+			      ESP_LOGI(TAG, "Voce: CLOSE");
 			      this->current_operation = COVER_OPERATION_CLOSING;
 			      break;
 			    case P_OPN1:
-			      ESP_LOGI(TAG, "Команда: Частичное открывание 1");
+			      ESP_LOGI(TAG, "Voce: Apertura parziale 1");
 			      break;
 			    case STOPPED:
-			      ESP_LOGI(TAG, "Команда: Остановлено");
+			      ESP_LOGI(TAG, "Voce: Arrestato");
 			      this->current_operation = COVER_OPERATION_IDLE;
 			      request_position();
 			      break;
 			    case ENDTIME:
-			      ESP_LOGI(TAG, "Операция завершена по таймауту");
+			      ESP_LOGI(TAG, "Operazione completata per timeout");
 			      this->current_operation = COVER_OPERATION_IDLE;
 			      request_position();
 			      break;
 			    default:
-			      ESP_LOGI(TAG, "Неизвестная команда: %X", data[11]);
+			      ESP_LOGI(TAG, "Voce sconosciuta: %X", data[11]);
 			  }  // switch sub_run_cmd1
 			} else {
 			  switch (data[11]) {  // sub_run_cmd2
 			    case STA_OPENING:
-			      ESP_LOGI(TAG, "Операция: Открывается");
+			      ESP_LOGI(TAG, "Stato: In apertura");
 			      this->current_operation = COVER_OPERATION_OPENING;
 			      break;
 			    case STA_CLOSING:
-			      ESP_LOGI(TAG, "Операция: Закрывается");
+			      ESP_LOGI(TAG, "Stato: In chiusura");
 			      this->current_operation = COVER_OPERATION_CLOSING;
 			      break;
 			    case CLOSED:
-			      ESP_LOGI(TAG, "Операция: Закрыто");
+			      ESP_LOGI(TAG, "Stato: Chiuso");
 			      this->current_operation = COVER_OPERATION_IDLE;
 			      this->position = COVER_CLOSED;
 			      break;
 			    case OPENED:
-			      ESP_LOGI(TAG, "Операция: Открыто");
+			      ESP_LOGI(TAG, "Stato: Aperto");
 			      this->current_operation = COVER_OPERATION_IDLE;
 			      this->position = COVER_OPEN;
 			      // calibrate opened position if the motor does not report max supported position (Road 400)
@@ -566,52 +566,52 @@ void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
                   }
 			      break;
 			    case STOPPED:
-			      ESP_LOGI(TAG, "Операция: Остановлено");
+			      ESP_LOGI(TAG, "Stato: Arrestato");
 			      this->current_operation = COVER_OPERATION_IDLE;
 			      request_position();
 			      break;
 			    case PART_OPENED:
-			      ESP_LOGI(TAG, "Операция: Частично открыто");
+			      ESP_LOGI(TAG, "Stato: Apertura parziale");
 			      this->current_operation = COVER_OPERATION_IDLE;
 			      request_position();
 			      break;
 			    default:
-			      ESP_LOGI(TAG, "Неизвестная операция: %X", data[11]);
+			      ESP_LOGI(TAG, "Stato sconosciuto: %X", data[11]);
 			  }  // switch sub_run_cmd2
 			}
 			this->publish_state_if_changed();  // публикуем состояние
             break; //RUN
 
           case STA:
-            ESP_LOGI(TAG,  "Подменю Статус в движении" );
+            ESP_LOGI(TAG,  "Sottomenu in movimento" );
             switch (data[11]) { // sub_run_cmd2
               case STA_OPENING:
               case 0x83: // Road 400
-                ESP_LOGI(TAG, "Движение: Открывается" );
+                ESP_LOGI(TAG, "Movimento: Apertura" );
                 this->current_operation = COVER_OPERATION_OPENING;
                 break;
               case STA_CLOSING:
               case 0x84: // Road 400
-                ESP_LOGI(TAG,  "Движение: Закрывается" );
+                ESP_LOGI(TAG,  "Movimento: Chiusura" );
                 this->current_operation = COVER_OPERATION_CLOSING;
                 break;
               case CLOSED:
-                ESP_LOGI(TAG,  "Движение: Закрыто" );
+                ESP_LOGI(TAG,  "Movimento: Chiuso" );
                 this->current_operation = COVER_OPERATION_IDLE;
                 this->position = COVER_CLOSED;
                 break;
               case OPENED:
-                ESP_LOGI(TAG, "Движение: Открыто");
+                ESP_LOGI(TAG, "Movimento: Aperto");
                 this->current_operation = COVER_OPERATION_IDLE;
                 this->position = COVER_OPEN;
                 break;
               case STOPPED:
-                ESP_LOGI(TAG, "Движение: Остановлено");
+                ESP_LOGI(TAG, "Movimento: Apertura parziale");
                 this->current_operation = COVER_OPERATION_IDLE;
                 request_position();
                 break;
               default: // sub_run_cmd2
-                ESP_LOGI(TAG,  "Движение: %X", data[11] );
+                ESP_LOGI(TAG,  "Movimento: %X", data[11] );
 
                 
             } // switch sub_run_cmd2
@@ -620,21 +620,21 @@ void NiceBusT4::parse_status_packet (const std::vector<uint8_t> &data) {
             break; //STA
 
           default: // sub_inf_cmd
-            ESP_LOGI(TAG,  "Подменю %X", data[10] );
+            ESP_LOGI(TAG,  "Sottomenu %X", data[10] );
         }  // switch sub_inf_cmd
 
         break; // Пакет контроллера привода
       case CONTROL:
-        ESP_LOGI(TAG,  "Пакет CONTROL" );
+        ESP_LOGI(TAG,  "Pacchetto CONTROL" );
         break; // CONTROL
       case FOR_ALL:
-        ESP_LOGI(TAG,  "Пакет для всех" );
+        ESP_LOGI(TAG,  "Pacchetto per tutti" );
         break; // FOR_ALL
       case 0x0A:
-        ESP_LOGI(TAG,  "Пакет приёмника" );
+        ESP_LOGI(TAG,  "Pacchetto ricevitore" );
         break; // пакет приёмника
       default: // cmd_mnu
-        ESP_LOGI(TAG,  "Меню %X", data[9] );
+        ESP_LOGI(TAG,  "Menu %X", data[9] );
     }  // switch  cmd_mnu
 
 
@@ -775,64 +775,64 @@ void NiceBusT4::dump_config() {    //  добавляем в  лог инфор�
   /*ESP_LOGCONFIG(TAG, "  Address: 0x%02X%02X", *this->header_[1], *this->header_[2]);*/
   switch (this->class_gate_) {
     case SLIDING:
-      ESP_LOGCONFIG(TAG, "  Тип: Откатные ворота");
+      ESP_LOGCONFIG(TAG, "  Tipo: cancello scorrevole");
       break;
     case SECTIONAL:
-      ESP_LOGCONFIG(TAG, "  Тип: Секционные ворота");
+      ESP_LOGCONFIG(TAG, "  Tipo: cancello sezionale");
       break;
     case SWING:
-      ESP_LOGCONFIG(TAG, "  Тип: Распашные ворота");
+      ESP_LOGCONFIG(TAG, "  Tipo: cancello a battenti");
       break;
     case BARRIER:
-      ESP_LOGCONFIG(TAG, "  Тип: Шлагбаум");
+      ESP_LOGCONFIG(TAG, "  Tipo: barriera");
       break;
     case UPANDOVER:
-      ESP_LOGCONFIG(TAG, "  Тип: Подъёмно-поворотные ворота");
+      ESP_LOGCONFIG(TAG, "  Tipo: cancello basculante");
       break;
     default:
-      ESP_LOGCONFIG(TAG, "  Тип: Неизвестные ворота, 0x%02X", this->class_gate_);
+      ESP_LOGCONFIG(TAG, "  Tipo: cancello sconosciuto, 0x%02X", this->class_gate_);
   } // switch
 
 
-  ESP_LOGCONFIG(TAG, "  Максимальное положение энкодера или таймера: %d", this->_max_opn);
-  ESP_LOGCONFIG(TAG, "  Положение отрытых ворот: %d", this->_pos_opn);
-  ESP_LOGCONFIG(TAG, "  Положение закрытых ворот: %d", this->_pos_cls);
+  ESP_LOGCONFIG(TAG, "  Posizione massima encoder o timer: %d", this->_max_opn);
+  ESP_LOGCONFIG(TAG, "  Posizione cancello aperto: %d", this->_pos_opn);
+  ESP_LOGCONFIG(TAG, "  Posizione cancello chiuso: %d", this->_pos_cls);
 
   std::string manuf_str(this->manufacturer_.begin(), this->manufacturer_.end());
-  ESP_LOGCONFIG(TAG, "  Производитель: %S ", manuf_str.c_str());
+  ESP_LOGCONFIG(TAG, "  Produttore: %S ", manuf_str.c_str());
 
   std::string prod_str(this->product_.begin(), this->product_.end());
-  ESP_LOGCONFIG(TAG, "  Привод: %S ", prod_str.c_str());
+  ESP_LOGCONFIG(TAG, "  Unità: %S ", prod_str.c_str());
 
   std::string hard_str(this->hardware_.begin(), this->hardware_.end());
-  ESP_LOGCONFIG(TAG, "  Железо привода: %S ", hard_str.c_str());
+  ESP_LOGCONFIG(TAG, "  Unità HW: %S ", hard_str.c_str());
 
   std::string firm_str(this->firmware_.begin(), this->firmware_.end());
-  ESP_LOGCONFIG(TAG, "  Прошивка привода: %S ", firm_str.c_str());
+  ESP_LOGCONFIG(TAG, "  Firmware unità: %S ", firm_str.c_str());
   
   std::string dsc_str(this->description_.begin(), this->description_.end());
-  ESP_LOGCONFIG(TAG, "  Описание привода: %S ", dsc_str.c_str());
+  ESP_LOGCONFIG(TAG, "  Descrizione unità: %S ", dsc_str.c_str());
 
 
-  ESP_LOGCONFIG(TAG, "  Адрес шлюза: 0x%02X%02X", addr_from[0], addr_from[1]);
-  ESP_LOGCONFIG(TAG, "  Адрес привода: 0x%02X%02X", addr_to[0], addr_to[1]);
-  ESP_LOGCONFIG(TAG, "  Адрес приёмника: 0x%02X%02X", addr_oxi[0], addr_oxi[1]);
+  ESP_LOGCONFIG(TAG, "  Indirizzo gateway: 0x%02X%02X", addr_from[0], addr_from[1]);
+  ESP_LOGCONFIG(TAG, "  Indirizzo unità: 0x%02X%02X", addr_to[0], addr_to[1]);
+  ESP_LOGCONFIG(TAG, "  Indirizzo destinatario: 0x%02X%02X", addr_oxi[0], addr_oxi[1]);
   
   std::string oxi_prod_str(this->oxi_product.begin(), this->oxi_product.end());
-  ESP_LOGCONFIG(TAG, "  Приёмник: %S ", oxi_prod_str.c_str());
+  ESP_LOGCONFIG(TAG, "  Ricevitore: %S ", oxi_prod_str.c_str());
   
   std::string oxi_hard_str(this->oxi_hardware.begin(), this->oxi_hardware.end());
-  ESP_LOGCONFIG(TAG, "  Железо приёмника: %S ", oxi_hard_str.c_str());
+  ESP_LOGCONFIG(TAG, "  Hardware ricevitore: %S ", oxi_hard_str.c_str());
 
   std::string oxi_firm_str(this->oxi_firmware.begin(), this->oxi_firmware.end());
-  ESP_LOGCONFIG(TAG, "  Прошивка приёмника: %S ", oxi_firm_str.c_str());
+  ESP_LOGCONFIG(TAG, "  Firmware ricevitore: %S ", oxi_firm_str.c_str());
   
   std::string oxi_dsc_str(this->oxi_description.begin(), this->oxi_description.end());
-  ESP_LOGCONFIG(TAG, "  Описание приёмника: %S ", oxi_dsc_str.c_str());
+  ESP_LOGCONFIG(TAG, "  Descrizione ricevitore: %S ", oxi_dsc_str.c_str());
  
-  ESP_LOGCONFIG(TAG, "  Автозакрытие - L1: %S ", autocls_flag ? "Да" : "Нет");
-  ESP_LOGCONFIG(TAG, "  Закрыть после фото - L2: %S ", photocls_flag ? "Да" : "Нет");
-  ESP_LOGCONFIG(TAG, "  Всегда закрывать - L3: %S ", alwayscls_flag ? "Да" : "Нет");
+  ESP_LOGCONFIG(TAG, "  Chiusura automatica - L1: %S ", autocls_flag ? "Si" : "No");
+  ESP_LOGCONFIG(TAG, "  Chiudi dopo fotocellula - L2: %S ", photocls_flag ? "Si" : "No");
+  ESP_LOGCONFIG(TAG, "  Chiudi sempre - L3: %S ", alwayscls_flag ? "Si" : "No");
   
 }
 
@@ -1023,12 +1023,12 @@ void NiceBusT4::update_position(uint16_t newpos) {
   last_position_time = millis();
   _pos_usl = newpos;
   position = (_pos_usl - _pos_cls) * 1.0f / (_pos_opn - _pos_cls);
-  ESP_LOGI(TAG, "Условное положение ворот: %d, положение в %%: %.3f", newpos, position);
+  ESP_LOGI(TAG, "Posizione del cancello: %d, posizione a %%: %.3f", newpos, position);
   if (position < CLOSED_POSITION_THRESHOLD) position = COVER_CLOSED;
   publish_state_if_changed();  // публикуем состояние
   
   if ((position_hook_type == STOP_UP && _pos_usl >= position_hook_value) || (position_hook_type == STOP_DOWN && _pos_usl <= position_hook_value)) {
-  	ESP_LOGI(TAG, "Достигнуто требуемое положение. Останавливаем ворота");
+  	ESP_LOGI(TAG, "Posizione raggiunta. Cancello in arresto");
   	send_cmd(STOP);
   	position_hook_type = IGNORE;
   }
