@@ -1,42 +1,40 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import cover
-from esphome.const import CONF_ADDRESS, CONF_ID, CONF_UPDATE_INTERVAL, CONF_USE_ADDRESS
+from esphome.const import CONF_ADDRESS, CONF_ID, CONF_USE_ADDRESS
 
-
-
+# Definizione del namespace e della classe C++ associata al template lupanosix_blu
 bus_t4_ns = cg.esphome_ns.namespace('bus_t4')
-Nice = bus_t4_ns.class_('NiceBusT4', cover.Cover, cg.Component)
+NiceBusT4 = bus_t4_ns.class_('NiceBusT4', cover.Cover, cg.Component)
+
 CONFIG_SCHEMA = (
-    cover.cover_schema(Nice)  # Changed from COVER_SCHEMA to cover_schema()
+    cover.cover_schema(NiceBusT4)
     .extend(
         {
-    cv.Optional(CONF_ADDRESS): cv.hex_uint16_t,
-    cv.Optional(CONF_USE_ADDRESS): cv.hex_uint16_t,
-#    cv.Optional(CONF_UPDATE_INTERVAL): cv.positive_time_period_milliseconds,
+            cv.Optional(CONF_ADDRESS): cv.hex_uint16_t,
+            cv.Optional(CONF_USE_ADDRESS): cv.hex_uint16_t,
         }
-            )
-            .extend(cv.COMPONENT_SCHEMA)
+    )
+    .extend(cv.COMPONENT_SCHEMA)
 )
 
 def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     yield cg.register_component(var, config)
-
     yield cover.register_cover(var, config)
 
+    # Scomposizione dell'indirizzo di destinazione (addr_to) nei due byte costituenti
     if CONF_ADDRESS in config:
         address = config[CONF_ADDRESS]
-        cg.add(var.set_to_address(address))
+        addr_hi = (address >> 8) & 0xFF
+        addr_lo = address & 0xFF
+        cg.add(var.addr_to[0], addr_hi)
+        cg.add(var.addr_to[1], addr_lo)
 
+    # Scomposizione dell'indirizzo sorgente del gateway (addr_from) nei due byte costituenti
     if CONF_USE_ADDRESS in config:
         use_address = config[CONF_USE_ADDRESS]
-        cg.add(var.set_from_address(use_address))
-        
-        
- #   if CONF_UPDATE_INTERVAL in config:
- #       update_interval = config[CONF_UPDATE_INTERVAL]
- #       cg.add(var.set_update_interval(update_interval))
-
-
-
+        from_hi = (use_address >> 8) & 0xFF
+        from_lo = use_address & 0xFF
+        cg.add(var.addr_from[0], from_hi)
+        cg.add(var.addr_from[1], from_lo)
