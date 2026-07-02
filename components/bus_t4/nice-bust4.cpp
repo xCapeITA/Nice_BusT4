@@ -17,16 +17,6 @@ CoverTraits NiceBusT4::get_traits() {
   return traits;
 }
 
-/*
-  Dump dei comandi OVIEW:
-  SBS           55 0c 00 ff 00 66 01 05 9D 01 82 01 64 E6 0c
-  STOP          55 0c 00 ff 00 66 01 05 9D 01 82 02 64 E5 0c
-  OPEN          55 0c 00 ff 00 66 01 05 9D 01 82 03 00 80 0c
-  CLOSE         55 0c 00 ff 00 66 01 05 9D 01 82 04 64 E3 0c
-  PARENTAL OPN1 55 0c 00 ff 00 66 01 05 9D 01 82 05 64 E2 0c
-  PARENTAL OPN2 55 0c 00 ff 00 66 01 05 9D 01 82 06 64 E1 0c
-*/
-
 void NiceBusT4::control(const CoverCall &call) {
   position_hook_type = IGNORE;
   if (call.get_stop()) {
@@ -38,7 +28,7 @@ void NiceBusT4::control(const CoverCall &call) {
         if (current_operation != COVER_OPERATION_OPENING) send_cmd(OPEN);
       } else if (newpos == COVER_CLOSED) {
         if (current_operation != COVER_OPERATION_CLOSING) send_cmd(CLOSE);
-      } else { // Posizione arbitraria
+      } else { 
         position_hook_value = (_pos_opn - _pos_cls) * newpos + _pos_cls;
         ESP_LOGI(TAG, "Posizione richiesta: %d", position_hook_value);
         if (position_hook_value > _pos_usl) {
@@ -54,13 +44,12 @@ void NiceBusT4::control(const CoverCall &call) {
 }
 
 void NiceBusT4::setup() {
-  _uart = uart_init(_UART_NO, BAUD_WORK, SERIAL_8N1, SERIAL_FULL, TX_P, 256, false);
+  _uart = reinterpret_cast<HardwareSerial*>(uart_init(_UART_NO, BAUD_WORK, SERIAL_8N1, SERIAL_FULL, TX_P, 256, false));
 }
 
 void NiceBusT4::loop() {
   uint32_t now = millis();
 
-  // Controllo ciclico ogni 10 secondi per inizializzazione driver
   if ((now - this->last_update_) > 10000) {
     std::vector<uint8_t> unknown = {0x55, 0x55};
     if (!this->init_ok) {
@@ -72,27 +61,25 @@ void NiceBusT4::loop() {
     this->last_update_ = now;
   }
 
-  // Finestra temporale Tx ogni 100 ms
   if (now - this->last_uart_byte_ > 100) {
     this->ready_to_tx_ = true;
     this->last_uart_byte_ = now;
   }
 
-  // Ricezione dati UART
-  while (uart_rx_available(_uart) > 0) {
-    uint8_t c = (uint8_t)uart_read_char(_uart);
+  // Lettura UART con cast nativo per prevenire errori di tipo tra core C e classi C++
+  uart_t* native_uart = reinterpret_cast<uart_t*>(_uart);
+  while (uart_rx_available(native_uart) > 0) {
+    uint8_t c = (uint8_t)uart_read_char(native_uart);
     this->handle_char_(c);
     this->last_uart_byte_ = now;
   }
 
-  // Trasmissione coda comandi
   if (this->ready_to_tx_ && !this->tx_buffer_.empty()) {
     this->send_array_cmd(this->tx_buffer_.front());
     this->tx_buffer_.pop();
     this->ready_to_tx_ = false;
   }
 
-  // Interrogazione della posizione corrente (se non Robus)
   if (!is_robus && init_ok && (current_operation != COVER_OPERATION_IDLE)) {
     if (now - last_position_time > POSITION_UPDATE_INTERVAL) {
       last_position_time = now;
@@ -113,11 +100,8 @@ bool NiceBusT4::validate_message_() {
   uint8_t *data = &this->rx_message_[0];
   uint8_t new_byte = data[at];
 
-  // Byte 0: HEADER1 (sempre 0x00)
   if (at == 0) return new_byte == 0x00;
-  // Byte 1: HEADER2 (sempre 0x55)
   if (at == 1) return new_byte == START_CODE;
-  // Byte 2: packet_size
   if (at == 2) return true;
 
   uint8_t packet_size = data[2];
@@ -125,27 +109,24 @@ bool NiceBusT4::validate_message_() {
 
   if (at <= 8) return true;
 
-  // Verifica Checksum 1 sul preambolo
   if (at == 9) {
     uint8_t crc1 = (data[3] ^ data[4] ^ data[5] ^ data[6] ^ data[7] ^ data[8]);
     if (data[9] != crc1) {
-      ESP_LOGW(TAG, "Checksum 1: ricevuto messaggio invalido %02X!=%02X", data[9], crc1);
+      ESP_LOGW(TAG, "Checksum 1 invalido %02X!=%02X", data[9], crc1);
       return false;
     }
     return true;
   }
 
-  // Attendi il completamento del pacchetto basato sulla lunghezza dichiarata
   if (at < length) return true;
 
-  // Calcolo e verifica Checksum 2 sulla parte dati
   uint8_t crc2 = data[10];
   for (uint8_t i = 11; i < length - 1; i++) {
     crc2 = (crc2 ^ data[i]);
   }
 
   if (data[length - 1] != crc2) {
-    ESP_LOGW(TAG, "Checksum 2: ricevuto messaggio invalido %02X!=%02X", data[length - 1], crc2);
+    ESP_LOGW(TAG, "Checksum 2 invalido %02X!=%02X", data[length - 1], crc2);
     return false;
   }
 
@@ -154,14 +135,12 @@ bool NiceBusT4::validate_message_() {
     return false;
   }
 
-  // Messaggio valido - Rimozione byte di intestazione zero ed elaborazione
   rx_message_.erase(rx_message_.begin());
   std::string pretty_cmd = format_hex_pretty(rx_message_);
   ESP_LOGI(TAG, "Pacchetto ricevuto: %s", pretty_cmd.c_str());
 
   parse_status_packet(rx_message_);
-
-  return false; // Restituisce sempre false per resettare il buffer rx dopo l'elaborazione
+  return false; 
 }
 
 void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
@@ -177,7 +156,6 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
     ESP_LOGI(TAG, "Dati HEX: %s", pretty_data.c_str());
 
     if ((data[6] == INF) && (data[9] == FOR_CU) && (data[11] == GET - 0x80)) {
-      ESP_LOGI(TAG, "Ricevuta risposta %X", data[10]);
       switch (data[10]) {
         case TYPE_M:
           if (data.size() > 14) {
@@ -223,9 +201,7 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
         case POS_MAX:
           if (data.size() > 15) {
             uint16_t pos_opn_val = (data[14] << 8) + data[15];
-            if (pos_opn_val > 0x00) {
-              this->_pos_opn = pos_opn_val;
-            }
+            if (pos_opn_val > 0x00) this->_pos_opn = pos_opn_val;
             ESP_LOGI(TAG, "Posizione cancello aperto: %d", this->_pos_opn);
           }
           break;
@@ -241,36 +217,23 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
           if (data.size() > 14) {
             switch (data[14]) {
               case OPENED:
-                ESP_LOGI(TAG, "Cancello aperto");
                 this->current_operation = COVER_OPERATION_IDLE;
                 this->position = COVER_OPEN;
                 break;
               case CLOSED:
-                ESP_LOGI(TAG, "Cancello chiuso");
                 this->current_operation = COVER_OPERATION_IDLE;
                 this->position = COVER_CLOSED;
                 break;
               case 0x01:
-                ESP_LOGI(TAG, "Cancello fermo");
-                this->current_operation = COVER_OPERATION_IDLE;
-                request_position();
-                break;
               case 0x00:
-                ESP_LOGI(TAG, "Stato del cancello sconosciuto");
-                this->current_operation = COVER_OPERATION_IDLE;
-                request_position();
-                break;
               case 0x0b:
-                ESP_LOGI(TAG, "Ricerca..");
                 this->current_operation = COVER_OPERATION_IDLE;
                 request_position();
                 break;
               case STA_OPENING:
-                ESP_LOGI(TAG, "Apertura in corso..");
                 this->current_operation = COVER_OPERATION_OPENING;
                 break;
               case STA_CLOSING:
-                ESP_LOGI(TAG, "Chiusura in corso");
                 this->current_operation = COVER_OPERATION_CLOSING;
                 break;
             }
@@ -284,17 +247,12 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
             ESP_LOGCONFIG(TAG, "Chiusura automatica - L1: %s", autocls_flag ? "Si" : "No");
           }
           break;
-        case PH_CLS_ON:
-          if (data.size() > 14) this->photocls_flag = data[14];
-          break;
-        case ALW_CLS_ON:
-          if (data.size() > 14) this->alwayscls_flag = data[14];
-          break;
+        case PH_CLS_ON:  if (data.size() > 14) this->photocls_flag = data[14]; break;
+        case ALW_CLS_ON: if (data.size() > 14) this->alwayscls_flag = data[14]; break;
       }
     }
 
     if ((data[6] == INF) && (data[11] == GET - 0x81)) {
-      ESP_LOGI(TAG, "Ricevuta risposta incompleta %X, offset %X", data[10], data[12]);
       tx_buffer_.push(gen_inf_cmd(data[4], data[5], data[9], data[10], GET, data[12]));
     }
   }
@@ -309,9 +267,7 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
 
   if ((data[6] == INF) && (data[9] == FOR_ALL) && ((data[11] == GET - 0x80) || (data[11] == GET - 0x81)) && (data[13] == NOERR)) {
     switch (data[10]) {
-      case MAN:
-        this->manufacturer_.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
-        break;
+      case MAN: this->manufacturer_.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2); break;
       case PRD:
         if ((this->addr_oxi[0] == data[4]) && (this->addr_oxi[1] == data[5])) {
           this->oxi_product.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
@@ -327,32 +283,29 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
         if ((this->addr_oxi[0] == data[4]) && (this->addr_oxi[1] == data[5])) {
           this->oxi_hardware.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
         } else if ((this->addr_to[0] == data[4]) && (this->addr_to[1] == data[5])) {
-          this->hardware_.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
+          this->hardware_.assign(this->rx_message_.begin() + 14, this->hardware_.end() - 2);
         }
         break;
       case FRM:
         if ((this->addr_oxi[0] == data[4]) && (this->addr_oxi[1] == data[5])) {
           this->oxi_firmware.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
         } else if ((this->addr_to[0] == data[4]) && (this->addr_to[1] == data[5])) {
-          this->firmware_.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
+          this->firmware_.assign(this->rx_message_.begin() + 14, this->hardware_.end() - 2);
         }
         break;
       case DSC:
         if ((this->addr_oxi[0] == data[4]) && (this->addr_oxi[1] == data[5])) {
           this->oxi_description.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
         } else if ((this->addr_to[0] == data[4]) && (this->addr_to[1] == data[5])) {
-          this->description_.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
+          this->description_.assign(this->rx_message_.begin() + 14, this->hardware_.end() - 2);
         }
         break;
       case WHO:
         if (data[12] == 0x01) {
           if (data[14] == 0x04) {
-            this->addr_to[0] = data[4];
-            this->addr_to[1] = data[5];
-            this->init_ok = true;
+            this->addr_to[0] = data[4]; this->addr_to[1] = data[5]; this->init_ok = true;
           } else if (data[14] == 0x0A) {
-            this->addr_oxi[0] = data[4];
-            this->addr_oxi[1] = data[5];
+            this->addr_oxi[0] = data[4]; this->addr_oxi[1] = data[5];
             init_device(data[4], data[5], data[14]);
           }
         }
@@ -360,134 +313,58 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
     }
   }
 
-  if (data.size() > 13 && data[13] == NOERR) {
-    if ((data[9] == 0x0A) && (data[10] == 0x25) && (data[11] == 0x01) && (data[12] == 0x0A)) {
-      std::vector<uint8_t> vec_data(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
-      if (vec_data.size() >= 9) {
-        ESP_LOGCONFIG(TAG, "Numero telecomando: %X%X%X%X, comando: %X, pulsante: %X, modalità: %X, contatore pressioni: %d", 
-                      vec_data[5], vec_data[4], vec_data[3], vec_data[2], vec_data[8] / 0x10, vec_data[5] / 0x10, vec_data[7] + 0x01, vec_data[6]);
-      }
-    }
-    if ((data[9] == 0x0A) && (data[10] == 0x26) && (data[11] == 0x41) && (data[12] == 0x08)) {
-      std::vector<uint8_t> vec_data(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
-      if (vec_data.size() >= 4) {
-        ESP_LOGCONFIG(TAG, "Pulsante %X, telecomando numero: %X%X%X%X", vec_data[0] / 0x10, vec_data[0] % 0x10, vec_data[1], vec_data[2], vec_data[3]);
-      }
-    }
-  }
-
   if (data[1] > 0x0d) {
-    ESP_LOGD(TAG, "Ricevuto pacchetto RSP");
     switch (data[9]) {
       case FOR_CU:
-        ESP_LOGI(TAG, "Pacchetto controller");
         switch (data[10] + 0x80) {
           case RUN:
-            ESP_LOGI(TAG, "Sottomenu RUN");
             if (data[11] >= 0x80) {
               switch (data[11] - 0x80) {
-                case SBS:   ESP_LOGI(TAG, "Voce: Passo passo"); break;
-                case STOP:  ESP_LOGI(TAG, "Voce: STOP"); break;
-                case OPEN:  ESP_LOGI(TAG, "Voce: OPEN"); this->current_operation = COVER_OPERATION_OPENING; break;
-                case CLOSE: ESP_LOGI(TAG, "Voce: CLOSE"); this->current_operation = COVER_OPERATION_CLOSING; break;
-                case P_OPN1:ESP_LOGI(TAG, "Voce: Apertura parziale 1"); break;
+                case OPEN:  this->current_operation = COVER_OPERATION_OPENING; break;
+                case CLOSE: this->current_operation = COVER_OPERATION_CLOSING; break;
                 case STOPPED:
-                  ESP_LOGI(TAG, "Voce: Arrestato");
-                  this->current_operation = COVER_OPERATION_IDLE;
-                  request_position();
-                  break;
                 case ENDTIME:
-                  ESP_LOGI(TAG, "Operazione completata per timeout");
-                  this->current_operation = COVER_OPERATION_IDLE;
-                  request_position();
-                  break;
-                default: ESP_LOGI(TAG, "Voce sconosciuta: %X", data[11]); break;
+                  this->current_operation = COVER_OPERATION_IDLE; request_position(); break;
               }
             } else {
               switch (data[11]) {
-                case STA_OPENING: ESP_LOGI(TAG, "Stato: In apertura"); this->current_operation = COVER_OPERATION_OPENING; break;
-                case STA_CLOSING: ESP_LOGI(TAG, "Stato: In chiusura"); this->current_operation = COVER_OPERATION_CLOSING; break;
-                case CLOSED:
-                  ESP_LOGI(TAG, "Stato: Chiuso");
-                  this->current_operation = COVER_OPERATION_IDLE;
-                  this->position = COVER_CLOSED;
-                  break;
+                case STA_OPENING: this->current_operation = COVER_OPERATION_OPENING; break;
+                case STA_CLOSING: this->current_operation = COVER_OPERATION_CLOSING; break;
+                case CLOSED:      this->current_operation = COVER_OPERATION_IDLE; this->position = COVER_CLOSED; break;
                 case OPENED:
-                  ESP_LOGI(TAG, "Stato: Aperto");
-                  this->current_operation = COVER_OPERATION_IDLE;
-                  this->position = COVER_OPEN;
-                  if (this->_max_opn == 0) {
-                    this->_max_opn = this->_pos_opn = this->_pos_usl;
-                    ESP_LOGI(TAG, "Posizione di apertura calibrata automaticamente");
-                  }
+                  this->current_operation = COVER_OPERATION_IDLE; this->position = COVER_OPEN;
+                  if (this->_max_opn == 0) this->_max_opn = this->_pos_opn = this->_pos_usl;
                   break;
                 case STOPPED:
-                  ESP_LOGI(TAG, "Stato: Arrestato");
-                  this->current_operation = COVER_OPERATION_IDLE;
-                  request_position();
-                  break;
                 case PART_OPENED:
-                  ESP_LOGI(TAG, "Stato: Apertura parziale");
-                  this->current_operation = COVER_OPERATION_IDLE;
-                  request_position();
-                  break;
-                default: ESP_LOGI(TAG, "Stato sconosciuto: %X", data[11]); break;
+                  this->current_operation = COVER_OPERATION_IDLE; request_position(); break;
               }
             }
             this->publish_state_if_changed();
             break;
 
           case STA:
-            ESP_LOGI(TAG, "Sottomenu in movimento");
             switch (data[11]) {
-              case STA_OPENING:
-              case 0x83:
-                ESP_LOGI(TAG, "Movimento: Apertura");
-                this->current_operation = COVER_OPERATION_OPENING;
-                break;
-              case STA_CLOSING:
-              case 0x84:
-                ESP_LOGI(TAG, "Movimento: Chiusura");
-                this->current_operation = COVER_OPERATION_CLOSING;
-                break;
-              case CLOSED:
-                ESP_LOGI(TAG, "Movimento: Chiuso");
-                this->current_operation = COVER_OPERATION_IDLE;
-                this->position = COVER_CLOSED;
-                break;
-              case OPENED:
-                ESP_LOGI(TAG, "Movimento: Aperto");
-                this->current_operation = COVER_OPERATION_IDLE;
-                this->position = COVER_OPEN;
-                break;
-              case STOPPED:
-                ESP_LOGI(TAG, "Movimento: Apertura parziale");
-                this->current_operation = COVER_OPERATION_IDLE;
-                request_position();
-                break;
-              default: ESP_LOGI(TAG, "Movimento: %X", data[11]); break;
+              case STA_OPENING: case 0x83: this->current_operation = COVER_OPERATION_OPENING; break;
+              case STA_CLOSING: case 0x84: this->current_operation = COVER_OPERATION_CLOSING; break;
+              case CLOSED:  this->current_operation = COVER_OPERATION_IDLE; this->position = COVER_CLOSED; break;
+              case OPENED:  this->current_operation = COVER_OPERATION_IDLE; this->position = COVER_OPEN; break;
+              case STOPPED: this->current_operation = COVER_OPERATION_IDLE; request_position(); break;
             }
-            if (data.size() > 13) {
-              update_position((data[12] << 8) + data[13]);
-            }
+            if (data.size() > 13) update_position((data[12] << 8) + data[13]);
             break;
-          default: ESP_LOGI(TAG, "Sottomenu %X", data[10]); break;
         }
         break;
-      case CONTROL: ESP_LOGI(TAG, "Pacchetto CONTROL"); break;
-      case FOR_ALL: ESP_LOGI(TAG, "Pacchetto per tutti"); break;
-      case 0x0A:    ESP_LOGI(TAG, "Pacchetto ricevitore"); break;
-      default:      ESP_LOGI(TAG, "Menu %X", data[9]); break;
     }
   }
 
   if ((data[6] == CMD) && (data[9] == FOR_CU) && (data[10] == CUR_MAN) && (data[13] == NOERR)) {
     switch (data[11]) {
-      case STA_OPENING: this->current_operation = COVER_OPERATION_OPENING; ESP_LOGD(TAG, "Stato: Apertura"); break;
-      case STA_CLOSING: this->current_operation = COVER_OPERATION_CLOSING; ESP_LOGD(TAG, "Stato: Chiusura"); break;
-      case OPENED:      this->position = COVER_OPEN; this->current_operation = COVER_OPERATION_IDLE; ESP_LOGD(TAG, "Stato: Aperto"); break;
-      case CLOSED:      this->position = COVER_CLOSED; this->current_operation = COVER_OPERATION_IDLE; ESP_LOGD(TAG, "Stato: Chiuso"); break;
-      case STOPPED:     this->current_operation = COVER_OPERATION_IDLE; ESP_LOGD(TAG, "Stato: Arrestato"); break;
+      case STA_OPENING: this->current_operation = COVER_OPERATION_OPENING; break;
+      case STA_CLOSING: this->current_operation = COVER_OPERATION_CLOSING; break;
+      case OPENED:      this->position = COVER_OPEN; this->current_operation = COVER_OPERATION_IDLE; break;
+      case CLOSED:      this->position = COVER_CLOSED; this->current_operation = COVER_OPERATION_IDLE; break;
+      case STOPPED:     this->current_operation = COVER_OPERATION_IDLE; break;
     }
     this->publish_state();
   }
@@ -495,120 +372,59 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
 
 void NiceBusT4::dump_config() {
   ESP_LOGCONFIG(TAG, "  Bus T4 Cover");
-  switch (this->class_gate_) {
-    case SLIDING:   ESP_LOGCONFIG(TAG, "  Tipo: cancello scorrevole"); break;
-    case SECTIONAL: ESP_LOGCONFIG(TAG, "  Tipo: cancello sezionale"); break;
-    case SWING:     ESP_LOGCONFIG(TAG, "  Tipo: cancello a battenti"); break;
-    case BARRIER:   ESP_LOGCONFIG(TAG, "  Tipo: barriera"); break;
-    case UPANDOVER: ESP_LOGCONFIG(TAG, "  Tipo: cancello basculante"); break;
-    default:        ESP_LOGCONFIG(TAG, "  Tipo: cancello sconosciuto, 0x%02X", this->class_gate_);
-  }
-
-  ESP_LOGCONFIG(TAG, "  Posizione massima encoder o timer: %d", this->_max_opn);
-  ESP_LOGCONFIG(TAG, "  Posizione cancello aperto: %d", this->_pos_opn);
-  ESP_LOGCONFIG(TAG, "  Posizione cancello chiuso: %d", this->_pos_cls);
-
   std::string manuf_str(this->manufacturer_.begin(), this->manufacturer_.end());
   ESP_LOGCONFIG(TAG, "  Produttore: %s", manuf_str.c_str());
-
   std::string prod_str(this->product_.begin(), this->product_.end());
   ESP_LOGCONFIG(TAG, "  Unità: %s", prod_str.c_str());
-
-  std::string hard_str(this->hardware_.begin(), this->hardware_.end());
-  ESP_LOGCONFIG(TAG, "  Unità HW: %s", hard_str.c_str());
-
-  std::string firm_str(this->firmware_.begin(), this->firmware_.end());
-  ESP_LOGCONFIG(TAG, "  Firmware unità: %s", firm_str.c_str());
-
-  std::string dsc_str(this->description_.begin(), this->description_.end());
-  ESP_LOGCONFIG(TAG, "  Descrizione unità: %s", dsc_str.c_str());
-
-  ESP_LOGCONFIG(TAG, "  Indirizzo gateway: 0x%02X%02X", addr_from[0], addr_from[1]);
-  ESP_LOGCONFIG(TAG, "  Indirizzo unità: 0x%02X%02X", addr_to[0], addr_to[1]);
-  ESP_LOGCONFIG(TAG, "  Indirizzo destinatario: 0x%02X%02X", addr_oxi[0], addr_oxi[1]);
-
-  std::string oxi_prod_str(this->oxi_product.begin(), this->oxi_product.end());
-  ESP_LOGCONFIG(TAG, "  Ricevitore: %s", oxi_prod_str.c_str());
-
-  std::string oxi_hard_str(this->oxi_hardware.begin(), this->oxi_hardware.end());
-  ESP_LOGCONFIG(TAG, "  Hardware ricevitore: %s", oxi_hard_str.c_str());
-
-  std::string oxi_firm_str(this->oxi_firmware.begin(), this->oxi_firmware.end());
-  ESP_LOGCONFIG(TAG, "  Firmware ricevitore: %s", oxi_firm_str.c_str());
-
-  std::string oxi_dsc_str(this->oxi_description.begin(), this->oxi_description.end());
-  ESP_LOGCONFIG(TAG, "  Descrizione ricevitore: %s", oxi_dsc_str.c_str());
-
-  ESP_LOGCONFIG(TAG, "  Chiusura automatica - L1: %s", autocls_flag ? "Si" : "No");
-  ESP_LOGCONFIG(TAG, "  Chiudi dopo fotocellula - L2: %s", photocls_flag ? "Si" : "No");
-  ESP_LOGCONFIG(TAG, "  Chiudi sempre - L3: %s", alwayscls_flag ? "Si" : "No");
 }
 
 std::vector<uint8_t> NiceBusT4::gen_control_cmd(const uint8_t control_cmd) {
   std::vector<uint8_t> frame = {this->addr_to[0], this->addr_to[1], this->addr_from[0], this->addr_from[1]};
-  frame.push_back(CMD);
-  frame.push_back(0x05);
+  frame.push_back(CMD); frame.push_back(0x05);
   uint8_t crc1 = (frame[0] ^ frame[1] ^ frame[2] ^ frame[3] ^ frame[4] ^ frame[5]);
-  frame.push_back(crc1);
-  frame.push_back(CONTROL);
-  frame.push_back(RUN);
-  frame.push_back(control_cmd);
-  frame.push_back(0x64); // OFFSET CMD per compatibilità DPRO924
+  frame.push_back(crc1); frame.push_back(CONTROL); frame.push_back(RUN);
+  frame.push_back(control_cmd); frame.push_back(0x64);
   uint8_t crc2 = (frame[7] ^ frame[8] ^ frame[9] ^ frame[10]);
   frame.push_back(crc2);
   uint8_t f_size = frame.size();
-  frame.push_back(f_size);
-  frame.insert(frame.begin(), f_size);
-  frame.insert(frame.begin(), START_CODE);
-
+  frame.push_back(f_size); frame.insert(frame.begin(), f_size); frame.insert(frame.begin(), START_CODE);
   return frame;
 }
 
 std::vector<uint8_t> NiceBusT4::gen_inf_cmd(const uint8_t to_addr1, const uint8_t to_addr2, const uint8_t whose, const uint8_t inf_cmd, const uint8_t run_cmd, const uint8_t next_data, const std::vector<uint8_t> &data, size_t len) {
   std::vector<uint8_t> frame = {to_addr1, to_addr2, this->addr_from[0], this->addr_from[1]};
-  frame.push_back(INF);
-  frame.push_back(0x06 + len);
+  frame.push_back(INF); frame.push_back(0x06 + len);
   uint8_t crc1 = (frame[0] ^ frame[1] ^ frame[2] ^ frame[3] ^ frame[4] ^ frame[5]);
-  frame.push_back(crc1);
-  frame.push_back(whose);
-  frame.push_back(inf_cmd);
-  frame.push_back(run_cmd);
-  frame.push_back(next_data);
-  frame.push_back(len);
+  frame.push_back(crc1); frame.push_back(whose); frame.push_back(inf_cmd);
+  frame.push_back(run_cmd); frame.push_back(next_data); frame.push_back(len);
   if (len > 0 && !data.empty()) {
     frame.insert(frame.end(), data.begin(), data.begin() + len);
   }
   uint8_t crc2 = frame[7];
-  for (size_t i = 8; i < 12 + len; i++) {
-    crc2 = crc2 ^ frame[i];
-  }
+  for (size_t i = 8; i < 12 + len; i++) crc2 = crc2 ^ frame[i];
   frame.push_back(crc2);
   uint8_t f_size = frame.size();
-  frame.push_back(f_size);
-  frame.insert(frame.begin(), f_size);
-  frame.insert(frame.begin(), START_CODE);
-
+  frame.push_back(f_size); frame.insert(frame.begin(), f_size); frame.insert(frame.begin(), START_CODE);
   return frame;
 }
 
-void NiceBusT4::send_raw_cmd(std::string data) {
+void NiceBusT4::send_raw_cmd(const std::string &data) {
   std::vector<uint8_t> v_cmd = raw_cmd_prepare(data);
-  if (!v_cmd.empty()) {
-    send_array_cmd(&v_cmd[0], v_cmd.size());
-  }
+  if (!v_cmd.empty()) send_array_cmd(&v_cmd[0], v_cmd.size());
 }
 
-std::vector<uint8_t> NiceBusT4::raw_cmd_prepare(std::string data) {
-  data.erase(std::remove_if(data.begin(), data.end(), [](const unsigned char ch) {
+std::vector<uint8_t> NiceBusT4::raw_cmd_prepare(const std::string &data) {
+  std::string clean_data = data;
+  clean_data.erase(std::remove_if(clean_data.begin(), clean_data.end(), [](const unsigned char ch) {
     return !(std::isxdigit(ch));
-  }), data.end());
+  }), clean_data.end());
 
   std::vector<uint8_t> frame;
-  if (data.size() % 2 != 0) return frame;
+  if (clean_data.size() % 2 != 0) return frame;
 
-  frame.reserve(data.size() / 2);
-  for (size_t i = 0; i < data.size(); i += 2) {
-    std::string sub_str = data.substr(i, 2);
+  frame.reserve(clean_data.size() / 2);
+  for (size_t i = 0; i < clean_data.size(); i += 2) {
+    std::string sub_str = clean_data.substr(i, 2);
     char hexstoi = (char)std::strtol(sub_str.c_str(), nullptr, 16);
     frame.push_back(hexstoi);
   }
@@ -616,27 +432,28 @@ std::vector<uint8_t> NiceBusT4::raw_cmd_prepare(std::string data) {
 }
 
 void NiceBusT4::send_array_cmd(std::vector<uint8_t> data) {
-  if (!data.empty()) {
-    send_array_cmd(data.data(), data.size());
-  }
+  if (!data.empty()) send_array_cmd(data.data(), data.size());
 }
 
 void NiceBusT4::send_array_cmd(const uint8_t *data, size_t len) {
   char br_ch = 0x00;
-  uart_flush(_uart);
-  uart_set_baudrate(_uart, BAUD_BREAK);
-  uart_write(_uart, &br_ch, 1);
-  uart_wait_tx_empty(_uart);
-  delayMicroseconds(90); // Mantiene la stabilità del break a ~520us su ESP
-  uart_set_baudrate(_uart, BAUD_WORK);
-  uart_write(_uart, (const char *)data, len);
-  uart_wait_tx_empty(_uart);
+  uart_t* native_uart = reinterpret_cast<uart_t*>(_uart);
+
+  uart_flush(native_uart);
+  uart_set_baudrate(native_uart, BAUD_BREAK);
+  uart_write(native_uart, &br_ch, 1);
+  uart_wait_tx_empty(native_uart);
+  delayMicroseconds(90); 
+  
+  uart_set_baudrate(native_uart, BAUD_WORK);
+  uart_write(native_uart, (const char *)data, len);
+  uart_wait_tx_empty(native_uart);
 
   std::string pretty_cmd = format_hex_pretty(data, len);
   ESP_LOGI(TAG, "Inviato: %s", pretty_cmd.c_str());
 }
 
-void NiceBusT4::send_inf_cmd(std::string to_addr, std::string whose, std::string command, std::string type_command, std::string next_data, bool data_on, std::string data_command) {
+void NiceBusT4::send_inf_cmd(const std::string &to_addr, const std::string &whose, const std::string &command, const std::string &type_command, const std::string &next_data, bool data_on, const std::string &data_command) {
   std::vector<uint8_t> v_to_addr = raw_cmd_prepare(to_addr);
   std::vector<uint8_t> v_whose = raw_cmd_prepare(whose);
   std::vector<uint8_t> v_command = raw_cmd_prepare(command);
@@ -653,7 +470,7 @@ void NiceBusT4::send_inf_cmd(std::string to_addr, std::string whose, std::string
   }
 }
 
-void NiceBusT4::set_mcu(std::string command, std::string data_command) {
+void NiceBusT4::set_mcu(const std::string &command, const std::string &data_command) {
   std::vector<uint8_t> v_command = raw_cmd_prepare(command);
   std::vector<uint8_t> v_data_command = raw_cmd_prepare(data_command);
   if (!v_command.empty()) {
@@ -671,31 +488,19 @@ void NiceBusT4::init_device(const uint8_t addr1, const uint8_t addr2, const uint
     tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, POS_MAX, GET, 0x00));
     tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, POS_MIN, GET, 0x00));
     tx_buffer_.push(gen_inf_cmd(addr1, addr2, FOR_ALL, DSC, GET, 0x00));
-    if (is_walky) {
-      tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, MAX_OPN, GET, 0x00, {0x01}, 1));
-    } else {
-      tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, MAX_OPN, GET, 0x00));
-    }
+    if (is_walky) tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, MAX_OPN, GET, 0x00, {0x01}, 1));
+    else tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, MAX_OPN, GET, 0x00));
     request_position();
     tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, INF_STATUS, GET, 0x00));
     tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, AUTOCLS, GET, 0x00));
     tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, PH_CLS_ON, GET, 0x00));
     tx_buffer_.push(gen_inf_cmd(addr1, addr2, device, ALW_CLS_ON, GET, 0x00));
   }
-  if (device == FOR_OXI) {
-    tx_buffer_.push(gen_inf_cmd(addr1, addr2, FOR_ALL, PRD, GET, 0x00));
-    tx_buffer_.push(gen_inf_cmd(addr1, addr2, FOR_ALL, HWR, GET, 0x00));
-    tx_buffer_.push(gen_inf_cmd(addr1, addr2, FOR_ALL, FRM, GET, 0x00));
-    tx_buffer_.push(gen_inf_cmd(addr1, addr2, FOR_ALL, DSC, GET, 0x00));
-  }
 }
 
 void NiceBusT4::request_position(void) {
-  if (is_walky) {
-    tx_buffer_.push(gen_inf_cmd(this->addr_to[0], this->addr_to[1], FOR_CU, CUR_POS, GET, 0x00, {0x01}, 1));
-  } else {
-    tx_buffer_.push(gen_inf_cmd(FOR_CU, CUR_POS, GET));
-  }
+  if (is_walky) tx_buffer_.push(gen_inf_cmd(this->addr_to[0], this->addr_to[1], FOR_CU, CUR_POS, GET, 0x00, {0x01}, 1));
+  else tx_buffer_.push(gen_inf_cmd(FOR_CU, CUR_POS, GET));
 }
 
 void NiceBusT4::update_position(uint16_t newpos) {
@@ -704,13 +509,11 @@ void NiceBusT4::update_position(uint16_t newpos) {
   if ((_pos_opn - _pos_cls) != 0) {
     position = (_pos_usl - _pos_cls) * 1.0f / (_pos_opn - _pos_cls);
   }
-  ESP_LOGI(TAG, "Posizione del cancello: %d, in percentuale: %.3f", newpos, position);
   if (position < CLOSED_POSITION_THRESHOLD) position = COVER_CLOSED;
   publish_state_if_changed();
 
   if ((position_hook_type == STOP_UP && _pos_usl >= position_hook_value) || 
       (position_hook_type == STOP_DOWN && _pos_usl <= position_hook_value)) {
-    ESP_LOGI(TAG, "Posizione raggiunta. Cancello in arresto");
     send_cmd(STOP);
     position_hook_type = IGNORE;
   }
@@ -725,5 +528,5 @@ void NiceBusT4::publish_state_if_changed(void) {
   }
 }
 
-}  // namespace bus_t4
-}  // namespace esphome
+} 
+}
