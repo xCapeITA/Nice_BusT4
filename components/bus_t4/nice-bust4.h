@@ -1,5 +1,5 @@
 /*
-  Nice BusT4
+  Nice BusT4 - lupanosix_blu
   Scambio dati via UART alla velocità di 19200 8n1
   Prima di ogni pacchetto dati viene inviato un break della durata di 519us (10 bit)
   Il contenuto del pacchetto compreso è descritto nella struttura packet_cmd_body_t
@@ -240,7 +240,6 @@ enum position_hook_type : uint8_t {
 
 class NiceBusT4 : public Component, public Cover {
  public:
-    // Impostazioni flag dell'automazione
     bool autocls_flag;   // Chiusura automatica - L1
     bool photocls_flag;  // Chiudi dopo foto - L2
     bool alwayscls_flag; // Chiudi sempre - L3
@@ -285,7 +284,6 @@ class NiceBusT4 : public Component, public Cover {
     bool init_cu_flag = false;  
     bool init_oxi_flag = false; 
 
-    // Variabili UART e posizionamento
     uint8_t _uart_nr;
 #ifdef ARDUINO_ARCH_ESP8266
     HardwareSerial* _uart = nullptr;
@@ -298,14 +296,12 @@ class NiceBusT4 : public Component, public Cover {
     uint16_t _pos_cls = 0;  
     uint16_t _pos_usl = 0;  
     
-    // Indirizzamento di default della rete BusT4 per il modulo lupanosix_blu
     uint8_t addr_from[2] = {0x00, 0x66}; 
     uint8_t addr_to[2]; 
     uint8_t addr_oxi[2]; 
 
     std::vector<uint8_t> raw_cmd_prepare(const std::string &data);             
   
-    // Generatori di comandi INF sovraccaricati e ottimizzati
     std::vector<uint8_t> gen_inf_cmd(const uint8_t to_addr1, const uint8_t to_addr2, const uint8_t whose, const uint8_t inf_cmd, const uint8_t run_cmd, const uint8_t next_data, const std::vector<uint8_t> &data, size_t len);  
     
     inline std::vector<uint8_t> gen_inf_cmd(const uint8_t whose, const uint8_t inf_cmd, const uint8_t run_cmd) {
