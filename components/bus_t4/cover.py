@@ -28,13 +28,11 @@ def to_code(config):
         address = config[CONF_ADDRESS]
         addr_hi = (address >> 8) & 0xFF
         addr_lo = address & 0xFF
-        cg.add(var.addr_to[0], addr_hi)
-        cg.add(var.addr_to[1], addr_lo)
+        cg.add(var.set_addr_to(addr_hi, addr_lo))
 
     # Gestione dell'indirizzo sorgente del gateway nell'array di byte nativo C++
     if CONF_USE_ADDRESS in config:
         use_address = config[CONF_USE_ADDRESS]
         from_hi = (use_address >> 8) & 0xFF
         from_lo = use_address & 0xFF
-        cg.add(var.addr_from[0], from_hi)
-        cg.add(var.addr_from[1], from_lo)
+        cg.add(var.set_addr_from(from_hi, from_lo))

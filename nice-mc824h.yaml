@@ -1,0 +1,113 @@
+# Configurazione Nice MC824H con componente bus_t4 (fork italiano)
+# Wemos D1 mini (ESP8266)
+
+esphome:
+  name: "nice-bust4-uart"
+
+esp8266:
+  board: d1_mini
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/TUO_UTENTE/Nice_BusT4
+      ref: it-ottimizzazione
+    components: [bus_t4]
+
+# La UART0 è condivisa tra logger e bus: disattiviamo il logger seriale.
+# I log restano disponibili dalla dashboard ESPHome e via API in Home Assistant.
+logger:
+  baud_rate: 0
+  level: DEBUG
+
+captive_portal:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: "FritzCasti"
+  password: !secret wifi_password
+  manual_ip:
+    static_ip: 192.168.68.174
+    gateway: 192.168.68.1
+    subnet: 255.255.255.0
+  ap:
+    ssid: Amc-Alarm-Fallback
+    password: !secret wifi_AP_password
+
+api:
+  encryption:
+    key: !secret esphome_encryption_key
+  reboot_timeout: 0s
+  actions:
+    - action: raw_command
+      variables:
+        raw_cmd: string
+      then:
+        lambda: |-
+          my_nice_cover->send_raw_cmd(raw_cmd);
+
+    - action: send_inf_command
+      variables:
+        to_addr: string
+        whose: string
+        command: string
+        type_command: string
+        next_data: string
+        data_on: bool
+        data_command: string
+      then:
+        lambda: |-
+          my_nice_cover->send_inf_cmd(to_addr, whose, command, type_command, next_data, data_on, data_command);
+
+    - action: gate_length_recognition
+      then:
+        lambda: |-
+          my_nice_cover->set_mcu("0b", "01");
+
+    - action: devices_recognition
+      then:
+        lambda: |-
+          my_nice_cover->set_mcu("0a", "01");
+
+button:
+  - platform: template
+    name: Passo-passo
+    id: sbs
+    on_press:
+      lambda: |-
+        my_nice_cover->send_cmd(bus_t4::SBS);
+
+  - platform: template
+    name: Apertura anta singola
+    id: p_opn1
+    on_press:
+      lambda: |-
+        my_nice_cover->send_cmd(bus_t4::P_OPN1);
+
+  - platform: template
+    name: Stop
+    id: p_stop
+    on_press:
+      lambda: |-
+        my_nice_cover->send_cmd(bus_t4::STOP);
+
+  - platform: template
+    name: Apri
+    id: p_open
+    on_press:
+      lambda: |-
+        my_nice_cover->send_cmd(bus_t4::OPEN);
+
+  - platform: template
+    name: Chiudi
+    id: p_close
+    on_press:
+      lambda: |-
+        my_nice_cover->send_cmd(bus_t4::CLOSE);
+
+cover:
+  - platform: bus_t4
+    name: "Nice MC824H"
+    id: my_nice_cover

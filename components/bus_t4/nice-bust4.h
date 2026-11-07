@@ -30,7 +30,6 @@
 
 #pragma once
 
-#include "esphome.h"
 #include "esphome/core/component.h"
 #include "esphome/core/automation.h"
 #include "esphome/components/cover/cover.h"
@@ -258,6 +257,8 @@ class NiceBusT4 : public Component, public Cover {
     void set_mcu(const std::string &command, const std::string &data_command); 
     
     void set_class_gate(uint8_t class_gate) { class_gate_ = class_gate; }
+    void set_addr_to(uint8_t hi, uint8_t lo) { addr_to[0] = hi; addr_to[1] = lo; }
+    void set_addr_from(uint8_t hi, uint8_t lo) { addr_from[0] = hi; addr_from[1] = lo; }
     cover::CoverTraits get_traits() override;
 
  protected:

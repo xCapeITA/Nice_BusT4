@@ -8,6 +8,13 @@ namespace bus_t4 {
 
 static const char *TAG = "bus_t4.cover";
 
+// Estrae il payload di un pacchetto: dopo l'intestazione di 14 byte e prima del CRC finale.
+// Restituisce un vettore vuoto se il pacchetto è troppo corto, così non si legge fuori dai limiti.
+static std::vector<uint8_t> payload_of(const std::vector<uint8_t> &data) {
+  if (data.size() < 16) return {};
+  return std::vector<uint8_t>(data.begin() + 14, data.end() - 2);
+}
+
 using namespace esphome::cover;
 
 CoverTraits NiceBusT4::get_traits() {
@@ -45,6 +52,11 @@ void NiceBusT4::control(const CoverCall &call) {
 
 void NiceBusT4::setup() {
   _uart = reinterpret_cast<HardwareSerial*>(uart_init(_UART_NO, BAUD_WORK, SERIAL_8N1, SERIAL_FULL, TX_P, 256, false));
+  if (_uart == nullptr) {
+    ESP_LOGE(TAG, "UART bus non inizializzata");
+    mark_failed();
+    return;
+  }
 }
 
 void NiceBusT4::loop() {
@@ -68,7 +80,10 @@ void NiceBusT4::loop() {
 
   // Lettura UART con cast nativo per prevenire errori di tipo tra core C e classi C++
   uart_t* native_uart = reinterpret_cast<uart_t*>(_uart);
-  while (uart_rx_available(native_uart) > 0) {
+  if (native_uart == nullptr) return;
+  // Limite di byte per ciclo: con linea rumorosa il buffer non si svuota mai e il watchdog scatta
+  int budget = 64;
+  while (budget-- > 0 && uart_rx_available(native_uart) > 0) {
     uint8_t c = (uint8_t)uart_read_char(native_uart);
     this->handle_char_(c);
     this->last_uart_byte_ = now;
@@ -105,7 +120,7 @@ bool NiceBusT4::validate_message_() {
   if (at == 2) return true;
 
   uint8_t packet_size = data[2];
-  uint8_t length = (packet_size + 3);
+  uint16_t length = (packet_size + 3);
 
   if (at <= 8) return true;
 
@@ -121,7 +136,7 @@ bool NiceBusT4::validate_message_() {
   if (at < length) return true;
 
   uint8_t crc2 = data[10];
-  for (uint8_t i = 11; i < length - 1; i++) {
+  for (uint16_t i = 11; i < length - 1; i++) {
     crc2 = (crc2 ^ data[i]);
   }
 
@@ -151,7 +166,7 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
   }
 
   if (((data[11] == GET - 0x80) || (data[11] == GET - 0x81)) && (data[13] == NOERR)) {
-    std::vector<uint8_t> vec_data(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
+    std::vector<uint8_t> vec_data = payload_of(data);
     std::string pretty_data = format_hex_pretty(vec_data);
     ESP_LOGI(TAG, "Dati HEX: %s", pretty_data.c_str());
 
@@ -267,12 +282,12 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
 
   if ((data[6] == INF) && (data[9] == FOR_ALL) && ((data[11] == GET - 0x80) || (data[11] == GET - 0x81)) && (data[13] == NOERR)) {
     switch (data[10]) {
-      case MAN: this->manufacturer_.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2); break;
+      case MAN: this->manufacturer_ = payload_of(data); break;
       case PRD:
         if ((this->addr_oxi[0] == data[4]) && (this->addr_oxi[1] == data[5])) {
-          this->oxi_product.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
+          this->oxi_product = payload_of(data);
         } else if ((this->addr_to[0] == data[4]) && (this->addr_to[1] == data[5])) {
-          this->product_.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
+          this->product_ = payload_of(data);
           std::vector<uint8_t> wla1 = {0x57,0x4C,0x41,0x31,0x00,0x06,0x57};
           std::vector<uint8_t> ROBUSHSR10 = {0x52,0x4F,0x42,0x55,0x53,0x48,0x53,0x52,0x31,0x30,0x00};
           if (this->product_ == wla1) this->is_walky = true;
@@ -281,23 +296,23 @@ void NiceBusT4::parse_status_packet(const std::vector<uint8_t> &data) {
         break;
       case HWR:
         if ((this->addr_oxi[0] == data[4]) && (this->addr_oxi[1] == data[5])) {
-          this->oxi_hardware.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
+          this->oxi_hardware = payload_of(data);
         } else if ((this->addr_to[0] == data[4]) && (this->addr_to[1] == data[5])) {
-          this->hardware_.assign(this->rx_message_.begin() + 14, this->hardware_.end() - 2);
+          this->hardware_ = payload_of(data);
         }
         break;
       case FRM:
         if ((this->addr_oxi[0] == data[4]) && (this->addr_oxi[1] == data[5])) {
-          this->oxi_firmware.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
+          this->oxi_firmware = payload_of(data);
         } else if ((this->addr_to[0] == data[4]) && (this->addr_to[1] == data[5])) {
-          this->firmware_.assign(this->rx_message_.begin() + 14, this->hardware_.end() - 2);
+          this->firmware_ = payload_of(data);
         }
         break;
       case DSC:
         if ((this->addr_oxi[0] == data[4]) && (this->addr_oxi[1] == data[5])) {
-          this->oxi_description.assign(this->rx_message_.begin() + 14, this->rx_message_.end() - 2);
+          this->oxi_description = payload_of(data);
         } else if ((this->addr_to[0] == data[4]) && (this->addr_to[1] == data[5])) {
-          this->description_.assign(this->rx_message_.begin() + 14, this->hardware_.end() - 2);
+          this->description_ = payload_of(data);
         }
         break;
       case WHO:
@@ -398,7 +413,7 @@ std::vector<uint8_t> NiceBusT4::gen_inf_cmd(const uint8_t to_addr1, const uint8_
   frame.push_back(crc1); frame.push_back(whose); frame.push_back(inf_cmd);
   frame.push_back(run_cmd); frame.push_back(next_data); frame.push_back(len);
   if (len > 0 && !data.empty()) {
-    frame.insert(frame.end(), data.begin(), data.begin() + len);
+    frame.insert(frame.end(), data.begin(), data.begin() + std::min(len, data.size()));
   }
   uint8_t crc2 = frame[7];
   for (size_t i = 8; i < 12 + len; i++) crc2 = crc2 ^ frame[i];
